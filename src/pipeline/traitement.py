@@ -47,4 +47,4 @@ def ajouter_flags(transactions: list[dict], seuil: Decimal = SEUIL_FLAG) -> list
     {**t, "flag": ...} crée une COPIE de la transaction avec la colonne en plus.
     L'original reste intact : c'est ce qui rend la fonction pure.
     """
-    return [{**t, "flag": t["montant"] >= seuil} for t in transactions]
+    return [{**t, "flag": t["montant"] > seuil} for t in transactions]
