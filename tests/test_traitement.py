@@ -13,13 +13,7 @@ from src.pipeline.traitement import (
     somme_recue_par_iban,
 )
 
-REFERENCE = "tests/donnees/transactions_reference.csv"
-
-# Les 4 comptes du fichier de référence
-A = "FR7630001007941234567890185"
-B = "FR7630004000031234567890143"
-C = "DE89370400440532013000"
-D = "DE44500105175407324931"
+from tests.outils import REFERENCE, A, B, C, D
 
 
 def test_somme_envoyee_par_iban():

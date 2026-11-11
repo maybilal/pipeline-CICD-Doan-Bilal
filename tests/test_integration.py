@@ -9,15 +9,8 @@ from decimal import Decimal
 
 import pytest
 
-from src.pipeline.base_de_donnees import connexion, creer_tables
 from src.pipeline.pipeline import executer_pipeline
-
-REFERENCE = "tests/donnees/transactions_reference.csv"
-
-A = "FR7630001007941234567890185"
-B = "FR7630004000031234567890143"
-C = "DE89370400440532013000"
-D = "DE44500105175407324931"
+from tests.outils import REFERENCE, A, B, C, D, base_vide, lire
 
 
 @pytest.fixture(scope="module")
@@ -26,23 +19,10 @@ def base():
     Préparation commune à tous les tests de ce fichier (exécutée une seule fois) :
     base vide -> pipeline sur le fichier de référence -> on donne la connexion aux tests.
     """
-    conn = connexion()
-    creer_tables(conn)
-    with conn.cursor() as cur:
-        cur.execute("TRUNCATE transactions, somme_envoyee_par_iban, somme_recue_par_iban, "
-                    "somme_envoyee_par_banque, comptes RESTART IDENTITY CASCADE")
-    conn.commit()
-
-    executer_pipeline(REFERENCE, conn)
+    conn = base_vide()
+    executer_pipeline(REFERENCE, attente=0)
     yield conn          # les tests s'exécutent ici
     conn.close()        # puis on ferme la connexion
-
-
-def lire(conn, requete: str) -> list[tuple]:
-    """Petit outil : exécute une requête SQL et renvoie les lignes."""
-    with conn.cursor() as cur:
-        cur.execute(requete)
-        return cur.fetchall()
 
 
 # --- 1. Les données sont bien insérées --------------------------------------
@@ -55,6 +35,12 @@ def test_tous_les_comptes_sont_inseres(base):
     assert dict(lire(base, "SELECT iban, banque FROM comptes")) == {
         A: "BNP Paribas", B: "BNP Paribas", C: "Commerzbank", D: "Deutsche Bank",
     }
+
+
+def test_le_fichier_est_enregistre_comme_traite(base):
+    assert lire(base, "SELECT nom_fichier, nb_transactions FROM processed_files") == [
+        ("transactions_reference.csv", 6)
+    ]
 
 
 # --- 2. Les valeurs enregistrées sont correctes -----------------------------
@@ -98,3 +84,15 @@ def test_seules_les_transactions_au_dessus_de_5000_sont_flaguees(base):
 
 def test_5000_pile_n_est_pas_flaguee(base):
     assert lire(base, "SELECT flag FROM transactions WHERE montant = 5000.00") == [(False,)]
+
+
+# --- 5. Un fichier déjà traité n'est jamais retraité ------------------------
+
+def test_relancer_la_pipeline_ne_cree_aucun_doublon(base):
+    totaux_avant = lire(base, "SELECT iban, total FROM somme_envoyee_par_iban ORDER BY iban")
+
+    bilan = executer_pipeline(REFERENCE, attente=0)      # 2e passage, même fichier
+
+    assert bilan == {"traites": [], "ignores": ["transactions_reference.csv"]}
+    assert lire(base, "SELECT COUNT(*) FROM transactions") == [(6,)]
+    assert lire(base, "SELECT iban, total FROM somme_envoyee_par_iban ORDER BY iban") == totaux_avant

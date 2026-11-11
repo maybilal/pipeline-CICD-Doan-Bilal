@@ -36,3 +36,15 @@ CREATE TABLE IF NOT EXISTS somme_envoyee_par_banque (
     banque VARCHAR(100)  PRIMARY KEY,
     total  NUMERIC(14,2) NOT NULL
 );
+
+-- Registre des fichiers déjà traités (pour ne JAMAIS traiter deux fois le même).
+-- On identifie un fichier par l'empreinte (hash SHA-256) de son CONTENU :
+-- même renommé, un fichier déjà traité sera reconnu.
+-- UNIQUE : la base elle-même refuse d'enregistrer deux fois la même empreinte.
+CREATE TABLE IF NOT EXISTS processed_files (
+    id               SERIAL       PRIMARY KEY,
+    nom_fichier      VARCHAR(255) NOT NULL,
+    empreinte        CHAR(64)     NOT NULL UNIQUE,
+    nb_transactions  INTEGER      NOT NULL,
+    date_traitement  TIMESTAMP    NOT NULL DEFAULT NOW()
+);

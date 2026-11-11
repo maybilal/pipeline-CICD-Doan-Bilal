@@ -3,7 +3,7 @@ BASE DE DONNÉES : créer les tables et y enregistrer les résultats.
 
 Les informations de connexion sont lues dans des "variables d'environnement",
 avec des valeurs par défaut qui correspondent au docker-compose.yml.
-Ça permettra à la pipeline CI (GitHub Actions) d'utiliser d'autres valeurs
+Ça permet à la pipeline CI (GitHub Actions) d'utiliser d'autres valeurs
 sans modifier le code.
 """
 import os
@@ -32,6 +32,35 @@ def creer_tables(conn) -> None:
     conn.commit()
 
 
+# --- Simulation de pannes (étape 7) -----------------------------------------
+# SIMULER_PANNES_BDD=2 python main.py  => les 2 premières insertions échouent.
+_pannes_restantes = int(os.getenv("SIMULER_PANNES_BDD", "0"))
+
+
+def simuler_pannes(nombre: int) -> None:
+    """Programme `nombre` pannes à venir (utilisé par les tests)."""
+    global _pannes_restantes
+    _pannes_restantes = nombre
+
+
+def _panne_eventuelle() -> None:
+    global _pannes_restantes
+    if _pannes_restantes > 0:
+        _pannes_restantes -= 1
+        raise psycopg2.OperationalError(
+            "[SIMULATION] connexion perdue : base de données temporairement indisponible"
+        )
+
+
+# --- Fichiers déjà traités ---------------------------------------------------
+def fichier_deja_traite(conn, empreinte: str) -> bool:
+    """Ce contenu de fichier a-t-il déjà été traité avec succès ?"""
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM processed_files WHERE empreinte = %s", (empreinte,))
+        return cur.fetchone() is not None
+
+
+# --- Insertion ----------------------------------------------------------------
 def lister_comptes(transactions: list[dict]) -> dict:
     """
     Construit la liste des comptes : {iban: (pays, banque)}.
@@ -46,18 +75,22 @@ def lister_comptes(transactions: list[dict]) -> dict:
     return comptes
 
 
-def inserer_resultats(conn, transactions_flaguees: list[dict],
+def inserer_resultats(conn, nom_fichier: str, empreinte: str, transactions_flaguees: list[dict],
                       envoye_iban: dict, recu_iban: dict, envoye_banque: dict) -> None:
     """
-    Enregistre les comptes, les transactions et les totaux.
+    Enregistre les comptes, les transactions, les totaux ET le fichier dans
+    processed_files.
 
     Tout est fait dans UNE SEULE transaction SQL : soit tout est enregistré,
-    soit rien (en cas d'erreur, "rollback" annule ce qui avait commencé).
+    soit rien. C'est ce qui garantit l'absence de doublons même avec le retry :
+      - si ça échoue au milieu, rien n'est gardé, et le fichier n'est pas marqué
+        "traité" => le retry recommence proprement ;
+      - si ça réussit, le fichier est marqué "traité" en même temps que ses
+        données => il ne sera plus jamais retraité.
     """
     try:
         with conn.cursor() as cur:
-            # 1. Les comptes. S'il existe déjà avec une banque "Inconnue",
-            #    on la complète ; sinon on ne touche à rien.
+            # 1. Les comptes (on complète une banque "Inconnue" si on l'apprend)
             for iban, (pays, banque) in lister_comptes(transactions_flaguees).items():
                 cur.execute(
                     "INSERT INTO comptes (iban, pays, banque) VALUES (%s, %s, %s) "
@@ -75,8 +108,11 @@ def inserer_resultats(conn, transactions_flaguees: list[dict],
                      t["iban_destinataire"], t["montant"], t["flag"]),
                 )
 
-            # 3. Les totaux. Si la ligne existe déjà, on AJOUTE au total existant :
-            #    traiter de nouveaux fichiers plus tard complètera les totaux.
+            # Panne simulée EN PLEIN MILIEU : les transactions viennent d'être
+            # insérées... le rollback doit les annuler.
+            _panne_eventuelle()
+
+            # 3. Les totaux (on ajoute au total existant)
             for table, cle, sommes in (
                 ("somme_envoyee_par_iban", "iban", envoye_iban),
                 ("somme_recue_par_iban", "iban", recu_iban),
@@ -88,7 +124,14 @@ def inserer_resultats(conn, transactions_flaguees: list[dict],
                         f"ON CONFLICT ({cle}) DO UPDATE SET total = {table}.total + EXCLUDED.total",
                         (valeur, total),
                     )
-        conn.commit()      # tout s'est bien passé : on valide
+
+            # 4. Le fichier est marqué comme traité
+            cur.execute(
+                "INSERT INTO processed_files (nom_fichier, empreinte, nb_transactions) "
+                "VALUES (%s, %s, %s)",
+                (nom_fichier, empreinte, len(transactions_flaguees)),
+            )
+        conn.commit()      # tout s'est bien passé : on valide TOUT
     except Exception:
         conn.rollback()    # un problème : on annule TOUT
         raise

@@ -35,7 +35,8 @@ jobs:
       DB_USER: pipeline
       DB_PASSWORD: pipeline
       DB_NAME: transactions
-      PGPASSWORD: pipeline   # pour la commande psql
+      PGPASSWORD: pipeline     # pour la commande psql
+      PYTHONUNBUFFERED: "1"    # affiche les messages Python en direct dans les logs
 
     steps:
       - name: Récupérer le code du dépôt
@@ -60,11 +61,17 @@ jobs:
       - name: "3 et 4. Charger, traiter et insérer dans la base"
         run: python main.py
 
-      - name: Afficher le contenu de la base
+      - name: "7a. Relancer la pipeline : aucun fichier ne doit être retraité"
         run: |
-          psql -h localhost -U pipeline -d transactions \
-            -c "SELECT COUNT(*) AS nb_transactions FROM transactions;" \
-            -c "SELECT * FROM somme_envoyee_par_banque ORDER BY total DESC;"
+          python main.py
+          NB=$(psql -h localhost -U pipeline -d transactions -tAc "SELECT COUNT(*) FROM transactions")
+          echo "Transactions en base après la relance : $NB (attendu : 36)"
+          test "$NB" -eq 36
+
+      - name: "7b. Retry : nouveau fichier + 2 pannes simulées de la base"
+        run: |
+          python generate_csv.py --seed 7 --nb-fichiers 1 --dossier data_retry
+          SIMULER_PANNES_BDD=2 python main.py data_retry
 
       # Si un seul test échoue, cette étape (et donc la pipeline) passe au ROUGE.
       - name: "5. Tests unitaires et d'intégration"
