@@ -1,0 +1,67 @@
+# Pipeline CI : à chaque "push" sur GitHub, un ordinateur de GitHub exécute
+# automatiquement toutes les étapes ci-dessous, de A à Z.
+
+name: Pipeline Data
+
+on:
+  push:                 # à chaque envoi de code
+  pull_request:         # à chaque proposition de modification
+  workflow_dispatch:    # + un bouton "Run workflow" pour la lancer à la main
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest   # un ordinateur Linux tout neuf, prêté par GitHub
+
+    # PostgreSQL lancé à côté, dans un conteneur Docker (comme notre docker-compose.yml)
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: pipeline
+          POSTGRES_PASSWORD: pipeline
+          POSTGRES_DB: transactions
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pipeline -d transactions"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
+    # Informations de connexion lues par base_de_donnees.py
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: pipeline
+      DB_PASSWORD: pipeline
+      DB_NAME: transactions
+      PGPASSWORD: pipeline   # pour la commande psql
+
+    steps:
+      - name: Récupérer le code du dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: "1. Générer les fichiers CSV"
+        run: |
+          python generate_csv.py
+          ls -l data/
+
+      - name: "2. Mettre en place la base de données"
+        run: psql -h localhost -U pipeline -d transactions -f sql/schema.sql
+
+      - name: "3 et 4. Charger, traiter et insérer dans la base"
+        run: python main.py
+
+      - name: Afficher le contenu de la base
+        run: |
+          psql -h localhost -U pipeline -d transactions \
+            -c "SELECT COUNT(*) AS nb_transactions FROM transactions;" \
+            -c "SELECT * FROM somme_envoyee_par_banque ORDER BY total DESC;"
