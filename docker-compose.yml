@@ -1,0 +1,24 @@
+# Lance une base PostgreSQL dans un conteneur Docker.
+#   Démarrer :  docker compose up -d
+#   Arrêter  :  docker compose down
+#   Tout effacer (données comprises) : docker compose down -v
+services:
+  postgres:
+    image: postgres:16
+    container_name: pipeline_postgres
+    environment:
+      POSTGRES_USER: pipeline
+      POSTGRES_PASSWORD: pipeline
+      POSTGRES_DB: transactions
+    ports:
+      - "5432:5432"            # rend la base accessible depuis ton ordinateur
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # les données survivent à un redémarrage
+    healthcheck:               # Docker vérifie régulièrement que la base répond
+      test: ["CMD-SHELL", "pg_isready -U pipeline -d transactions"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:
