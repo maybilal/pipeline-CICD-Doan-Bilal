@@ -39,10 +39,10 @@ jobs:
 
     steps:
       - name: Récupérer le code du dépôt
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Installer Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -65,3 +65,7 @@ jobs:
           psql -h localhost -U pipeline -d transactions \
             -c "SELECT COUNT(*) AS nb_transactions FROM transactions;" \
             -c "SELECT * FROM somme_envoyee_par_banque ORDER BY total DESC;"
+
+      # Si un seul test échoue, cette étape (et donc la pipeline) passe au ROUGE.
+      - name: "5. Tests unitaires et d'intégration"
+        run: pytest -v
