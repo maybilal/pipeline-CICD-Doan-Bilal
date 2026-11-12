@@ -73,7 +73,8 @@ jobs:
       - name: "2. Mettre en place la base de données"
         run: psql -h localhost -U pipeline -d transactions -f sql/schema.sql
 
-      - name: "3 et 4. Charger, traiter et insérer dans la base"
+      # N2-3 : les fichiers sont lus depuis le S3, plus depuis le disque
+      - name: "3 et 4. S3 -> récupération -> chargement -> traitement -> base"
         run: python main.py
 
       - name: "7a. Relancer la pipeline : aucun fichier ne doit être retraité"
@@ -83,10 +84,18 @@ jobs:
           echo "Transactions en base après la relance : $NB (attendu : 36)"
           test "$NB" -eq 36
 
-      - name: "7b. Retry : nouveau fichier + 2 pannes simulées de la base"
+      - name: "7b. Retry base : nouveau fichier dans S3 + 2 pannes simulées de la base"
         run: |
-          python generate_csv.py --seed 7 --nb-fichiers 1 --dossier data_retry
-          SIMULER_PANNES_BDD=2 python main.py data_retry
+          python generate_csv.py --seed 7 --nb-fichiers 1 --prefixe lot_retry_bdd --sans-reference --dossier data_nouveaux
+          python envoyer_s3.py data_nouveaux
+          SIMULER_PANNES_BDD=2 python main.py
+
+      - name: "N2-4. Retry S3 : nouveau fichier + 2 pannes simulées lors de la récupération"
+        run: |
+          rm -rf data_nouveaux
+          python generate_csv.py --seed 11 --nb-fichiers 1 --prefixe lot_retry_s3 --sans-reference --dossier data_nouveaux
+          python envoyer_s3.py data_nouveaux
+          SIMULER_PANNES_S3=2 python main.py
 
       # Si un seul test échoue, cette étape (et donc la pipeline) passe au ROUGE.
       - name: "5. Tests unitaires et d'intégration"

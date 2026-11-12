@@ -9,7 +9,7 @@ from decimal import Decimal
 
 import pytest
 
-from src.pipeline.pipeline import executer_pipeline
+from src.pipeline.pipeline import executer_pipeline, fichiers_locaux
 from tests.outils import REFERENCE, A, B, C, D, base_vide, lire
 
 
@@ -20,7 +20,7 @@ def base():
     base vide -> pipeline sur le fichier de référence -> on donne la connexion aux tests.
     """
     conn = base_vide()
-    executer_pipeline(REFERENCE, attente=0)
+    executer_pipeline(fichiers_locaux(REFERENCE), attente=0)
     yield conn          # les tests s'exécutent ici
     conn.close()        # puis on ferme la connexion
 
@@ -91,7 +91,7 @@ def test_5000_pile_n_est_pas_flaguee(base):
 def test_relancer_la_pipeline_ne_cree_aucun_doublon(base):
     totaux_avant = lire(base, "SELECT iban, total FROM somme_envoyee_par_iban ORDER BY iban")
 
-    bilan = executer_pipeline(REFERENCE, attente=0)      # 2e passage, même fichier
+    bilan = executer_pipeline(fichiers_locaux(REFERENCE), attente=0)      # 2e passage, même fichier
 
     assert bilan == {"traites": [], "ignores": ["transactions_reference.csv"]}
     assert lire(base, "SELECT COUNT(*) FROM transactions") == [(6,)]

@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 
 from src.pipeline.base_de_donnees import simuler_pannes
-from src.pipeline.pipeline import executer_pipeline
+from src.pipeline.pipeline import executer_pipeline, fichiers_locaux
 from src.pipeline.retry import EchecDefinitif, avec_retry
 from tests.outils import REFERENCE, base_vide, lire
 
@@ -61,7 +61,7 @@ def test_pannes_temporaires_puis_succes_sans_doublon():
     conn = base_vide()
     try:
         simuler_pannes(2)            # les 2 premières insertions échouent EN PLEIN MILIEU
-        bilan = executer_pipeline(REFERENCE, attente=0)
+        bilan = executer_pipeline(fichiers_locaux(REFERENCE), attente=0)
 
         assert bilan["traites"] == ["transactions_reference.csv"]
         # Les tentatives ratées ont été annulées (rollback) : pas de transactions en double
@@ -79,7 +79,7 @@ def test_trop_de_pannes_arrete_la_pipeline_sans_rien_inserer():
     try:
         simuler_pannes(5)            # plus de pannes que de tentatives autorisées (3)
         with pytest.raises(EchecDefinitif):
-            executer_pipeline(REFERENCE, attente=0)
+            executer_pipeline(fichiers_locaux(REFERENCE), attente=0)
 
         # Rien n'a été gardé, et le fichier n'est PAS marqué comme traité :
         # il sera bien traité au prochain lancement.

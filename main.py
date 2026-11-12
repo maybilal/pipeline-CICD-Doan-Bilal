@@ -1,16 +1,21 @@
 """
-Point d'entrée : lance la pipeline puis affiche le contenu de la base.
+Point d'entrée : traite les nouveaux fichiers du bucket S3, puis affiche le
+contenu de la base.
+
+    S3 -> récupération -> chargement -> traitement -> base de données
 
 Usage :
-    python main.py                    # traite les nouveaux CSV du dossier data/
-    python main.py chemin/fichier.csv
+    python main.py
     SIMULER_PANNES_BDD=2 python main.py   # simule 2 pannes temporaires de la base
+    SIMULER_PANNES_S3=2 python main.py    # simule 2 pannes lors de la récupération S3
+(Sous Windows PowerShell :  $env:SIMULER_PANNES_S3=2; python main.py; $env:SIMULER_PANNES_S3=0)
 """
 import sys
 
 from src.pipeline.base_de_donnees import connexion
-from src.pipeline.pipeline import executer_pipeline
+from src.pipeline.pipeline import executer_pipeline, fichiers_s3
 from src.pipeline.retry import EchecDefinitif
+from src.pipeline.stockage_s3 import BUCKET, attendre_s3, client_s3
 
 
 def lire(conn, requete: str) -> list[tuple]:
@@ -47,10 +52,15 @@ def afficher_base() -> None:
 
 
 def main() -> None:
-    source = sys.argv[1] if len(sys.argv) > 1 else "data"
     try:
-        bilan = executer_pipeline(source)
+        s3 = client_s3()
+        attendre_s3(s3)
+        fichiers = fichiers_s3(s3)
+        print(f"📦 {len(fichiers)} fichier(s) CSV trouvé(s) dans le bucket '{BUCKET}'\n")
+        bilan = executer_pipeline(fichiers)
     except EchecDefinitif as erreur:
+        # Rien n'est perdu : les fichiers déjà insérés le restent, et ceux qui
+        # n'ont pas pu l'être seront retraités au prochain lancement.
         print(f"\n🛑 PIPELINE ARRÊTÉE : {erreur}")
         sys.exit(1)       # code d'erreur => la pipeline GitHub passe au ROUGE
 

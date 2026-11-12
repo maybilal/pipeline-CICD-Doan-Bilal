@@ -107,17 +107,24 @@ def main() -> None:
     parser.add_argument("--nb-fichiers", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--dossier", default="data")
+    # Pour simuler l'arrivée de NOUVEAUX fichiers (avec un nom différent) :
+    parser.add_argument("--prefixe", default="transactions", help="début du nom des fichiers")
+    parser.add_argument("--sans-reference", action="store_true", help="ne pas créer le fichier de référence")
     args = parser.parse_args()
 
     dossier = Path(args.dossier)
     dossier.mkdir(parents=True, exist_ok=True)
     rng = random.Random(args.seed)  # générateur isolé avec graine fixe
 
-    ecrire_csv(dossier / "transactions_reference.csv", transactions_reference())
+    nb = 0
+    if not args.sans_reference:
+        ecrire_csv(dossier / "transactions_reference.csv", transactions_reference())
+        nb += 1
     for i in range(1, args.nb_fichiers + 1):
-        ecrire_csv(dossier / f"transactions_{i:03d}.csv", transactions_aleatoires(rng))
+        ecrire_csv(dossier / f"{args.prefixe}_{i:03d}.csv", transactions_aleatoires(rng))
+        nb += 1
 
-    print(f"{args.nb_fichiers + 1} fichiers CSV générés dans '{dossier}/'")
+    print(f"{nb} fichier(s) CSV généré(s) dans '{dossier}/'")
 
 
 if __name__ == "__main__":

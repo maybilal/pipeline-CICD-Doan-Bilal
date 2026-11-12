@@ -1,6 +1,6 @@
 """
-STOCKAGE S3 : se connecter au service S3, créer le bucket, envoyer et lister
-des fichiers.
+STOCKAGE S3 : se connecter au service S3, créer le bucket, envoyer, lister
+et récupérer des fichiers.
 
 Comme pour la base de données, les informations de connexion sont lues dans
 des variables d'environnement, avec des valeurs par défaut qui correspondent
@@ -11,7 +11,13 @@ from pathlib import Path
 
 import boto3
 from botocore.config import Config
-from botocore.exceptions import ClientError, EndpointConnectionError
+from botocore.exceptions import (
+    ClientError,
+    ConnectionClosedError,
+    ConnectTimeoutError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
 
 from src.pipeline.retry import avec_retry
 
@@ -33,7 +39,7 @@ def client_s3():
         region_name="us-east-1",                 # obligatoire pour boto3, ignoré en local
         config=Config(
             s3={"addressing_style": "path"},     # adresse du type http://hote/bucket/fichier
-            connect_timeout=3, read_timeout=10,
+            connect_timeout=3, read_timeout=10,  # au-delà, on considère que c'est un "timeout"
             retries={"max_attempts": 1},         # c'est NOTRE retry qui gère les nouvelles tentatives
         ),
     )
@@ -73,3 +79,54 @@ def lister_objets(s3, bucket: str = BUCKET) -> dict:
     """Renvoie les fichiers présents dans le bucket : {nom: taille en octets}."""
     reponse = s3.list_objects_v2(Bucket=bucket)
     return {o["Key"]: o["Size"] for o in reponse.get("Contents", [])}
+
+
+# --- Récupération d'un fichier, avec retry (Niveau 2, étape 4) ---------------
+
+class S3TemporairementIndisponible(Exception):
+    """Erreur utilisée pour SIMULER une panne du S3."""
+
+
+# Les erreurs considérées comme TEMPORAIRES : ça vaut la peine de réessayer.
+ERREURS_TEMPORAIRES_S3 = (
+    EndpointConnectionError,      # service S3 injoignable (arrêté, redémarrage...)
+    ConnectTimeoutError,          # trop long pour se connecter
+    ReadTimeoutError,             # trop long pour recevoir le fichier (timeout)
+    ConnectionClosedError,        # connexion coupée en cours de route (erreur réseau)
+    S3TemporairementIndisponible, # panne simulée
+)
+
+# SIMULER_PANNES_S3=2 python main.py  => les 2 premières récupérations échouent.
+_pannes_s3_restantes = int(os.getenv("SIMULER_PANNES_S3", "0"))
+
+
+def simuler_pannes_s3(nombre: int) -> None:
+    """Programme `nombre` pannes de récupération à venir (utilisé par les tests)."""
+    global _pannes_s3_restantes
+    _pannes_s3_restantes = nombre
+
+
+def _telecharger(s3, nom: str, bucket: str) -> bytes:
+    """UNE tentative de récupération du contenu d'un fichier."""
+    global _pannes_s3_restantes
+    if _pannes_s3_restantes > 0:
+        _pannes_s3_restantes -= 1
+        raise S3TemporairementIndisponible(
+            "[SIMULATION] timeout : le service S3 ne répond pas"
+        )
+    return s3.get_object(Bucket=bucket, Key=nom)["Body"].read()
+
+
+def recuperer_fichier(s3, nom: str, bucket: str = BUCKET,
+                      max_tentatives: int = 3, attente: float = 1.0) -> bytes:
+    """
+    Récupère le contenu d'un fichier du S3, en réessayant en cas de panne
+    temporaire. Lève EchecDefinitif si le fichier reste inaccessible.
+    """
+    return avec_retry(
+        lambda: _telecharger(s3, nom, bucket),
+        description=f"la récupération de {nom} depuis S3",
+        erreurs_temporaires=ERREURS_TEMPORAIRES_S3,
+        max_tentatives=max_tentatives,
+        attente_initiale=attente,
+    )
