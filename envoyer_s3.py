@@ -1,10 +1,10 @@
 """
-Niveau 2 — Envoie les fichiers CSV générés dans le stockage S3.
+Niveau 2 — Envoie les fichiers générés (CSV, et images au Niveau 3) dans le stockage S3.
 
 Étapes :
   1. attendre que le service S3 réponde ;
   2. créer le bucket (s'il n'existe pas) ;
-  3. envoyer chaque fichier CSV du dossier ;
+  3. envoyer chaque fichier (CSV ou image) du dossier ;
   4. vérifier que chaque fichier est bien présent dans S3, avec la bonne taille.
 
 Usage :
@@ -14,6 +14,7 @@ Usage :
 import sys
 from pathlib import Path
 
+from src.pipeline.pipeline import format_accepte
 from src.pipeline.retry import EchecDefinitif
 from src.pipeline.stockage_s3 import (
     BUCKET,
@@ -27,9 +28,9 @@ from src.pipeline.stockage_s3 import (
 
 def main() -> None:
     dossier = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("data")
-    fichiers = sorted(dossier.glob("*.csv"))
+    fichiers = sorted(c for c in dossier.iterdir() if format_accepte(c.name)) if dossier.is_dir() else []
     if not fichiers:
-        print(f"❌ Aucun fichier CSV dans '{dossier}/'. Lance d'abord : python generate_csv.py")
+        print(f"❌ Aucun fichier à envoyer dans '{dossier}/'. Lance d'abord : python generate_csv.py")
         sys.exit(1)
 
     s3 = client_s3()

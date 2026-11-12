@@ -93,6 +93,6 @@ def test_relancer_la_pipeline_ne_cree_aucun_doublon(base):
 
     bilan = executer_pipeline(fichiers_locaux(REFERENCE), attente=0)      # 2e passage, même fichier
 
-    assert bilan == {"traites": [], "ignores": ["transactions_reference.csv"]}
+    assert bilan == {"traites": [], "ignores": ["transactions_reference.csv"], "rejetes": []}
     assert lire(base, "SELECT COUNT(*) FROM transactions") == [(6,)]
     assert lire(base, "SELECT iban, total FROM somme_envoyee_par_iban ORDER BY iban") == totaux_avant

@@ -56,7 +56,7 @@ def main() -> None:
         s3 = client_s3()
         attendre_s3(s3)
         fichiers = fichiers_s3(s3)
-        print(f"📦 {len(fichiers)} fichier(s) CSV trouvé(s) dans le bucket '{BUCKET}'\n")
+        print(f"📦 {len(fichiers)} fichier(s) (CSV ou images) trouvé(s) dans le bucket '{BUCKET}'\n")
         bilan = executer_pipeline(fichiers)
     except EchecDefinitif as erreur:
         # Rien n'est perdu : les fichiers déjà insérés le restent, et ceux qui
@@ -65,8 +65,14 @@ def main() -> None:
         sys.exit(1)       # code d'erreur => la pipeline GitHub passe au ROUGE
 
     print(f"\nBilan : {len(bilan['traites'])} fichier(s) traité(s), "
-          f"{len(bilan['ignores'])} ignoré(s) car déjà traité(s).")
+          f"{len(bilan['ignores'])} ignoré(s) car déjà traité(s), "
+          f"{len(bilan['rejetes'])} rejeté(s) car invalide(s).")
     afficher_base()
+
+    if bilan["rejetes"]:
+        # Des données invalides ont été détectées : on le signale à la CI.
+        print(f"\n⚠️  Fichiers rejetés à corriger : {', '.join(bilan['rejetes'])}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
