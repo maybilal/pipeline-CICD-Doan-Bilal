@@ -37,10 +37,21 @@ jobs:
       DB_NAME: transactions
       PGPASSWORD: pipeline     # pour la commande psql
       PYTHONUNBUFFERED: "1"    # affiche les messages Python en direct dans les logs
+      # Informations de connexion lues par stockage_s3.py
+      S3_ENDPOINT: http://localhost:9000
+      S3_ACCESS_KEY: pipeline-access
+      S3_SECRET_KEY: pipeline-secret-123
+      S3_BUCKET: transactions
 
     steps:
       - name: Récupérer le code du dépôt
         uses: actions/checkout@v5
+
+      # Niveau 2 : le S3 est démarré AU DÉBUT, avec le même docker-compose.yml qu'en local
+      - name: "N2-1. Démarrer le service S3"
+        run: |
+          docker compose up -d s3
+          docker ps --filter name=pipeline_s3
 
       - name: Installer Python
         uses: actions/setup-python@v6
@@ -54,6 +65,10 @@ jobs:
         run: |
           python generate_csv.py
           ls -l data/
+
+      # Attente du S3, création du bucket, envoi, puis vérification de présence
+      - name: "N2-2. Créer le bucket et y envoyer les CSV"
+        run: python envoyer_s3.py
 
       - name: "2. Mettre en place la base de données"
         run: psql -h localhost -U pipeline -d transactions -f sql/schema.sql
