@@ -6,6 +6,7 @@ La pipeline complète. Pour chaque fichier :
 Le chargement dépend du FORMAT du fichier (Niveau 3) :
     .csv           -> lecture du CSV
     .png / .jpg    -> OCR + extraction des informations
+    .txt           -> SLM (petit modèle de langage)
 Ensuite, tous les formats suivent EXACTEMENT le même chemin.
 
 - Un fichier déjà traité est ignoré (empreinte dans processed_files).
@@ -31,6 +32,7 @@ from src.pipeline.base_de_donnees import (
 from src.pipeline.chargement import lire_csv
 from src.pipeline.ocr import transactions_depuis_image
 from src.pipeline.retry import avec_retry
+from src.pipeline.slm import transactions_depuis_texte
 from src.pipeline.stockage_s3 import BUCKET, lister_objets, recuperer_fichier
 from src.pipeline.traitement import (
     ajouter_flags,
@@ -49,6 +51,7 @@ CHARGEURS = {
     ".png": transactions_depuis_image,
     ".jpg": transactions_depuis_image,
     ".jpeg": transactions_depuis_image,
+    ".txt": transactions_depuis_texte,
 }
 
 
@@ -65,7 +68,7 @@ def charger(nom: str, contenu: bytes) -> list[dict]:
 
 def fichiers_s3(s3, bucket: str = BUCKET, max_tentatives: int = 3,
                 attente: float = 1.0) -> list[FichierATraiter]:
-    """Les fichiers acceptés (CSV, images) présents dans le bucket S3."""
+    """Les fichiers acceptés (CSV, images, textes) présents dans le bucket S3."""
     noms = sorted(n for n in lister_objets(s3, bucket) if format_accepte(n))
     return [
         (nom, lambda nom=nom: recuperer_fichier(s3, nom, bucket, max_tentatives, attente))

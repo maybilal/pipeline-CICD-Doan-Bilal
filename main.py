@@ -56,7 +56,7 @@ def main() -> None:
         s3 = client_s3()
         attendre_s3(s3)
         fichiers = fichiers_s3(s3)
-        print(f"📦 {len(fichiers)} fichier(s) (CSV ou images) trouvé(s) dans le bucket '{BUCKET}'\n")
+        print(f"📦 {len(fichiers)} fichier(s) (CSV, images ou textes) trouvé(s) dans le bucket '{BUCKET}'\n")
         bilan = executer_pipeline(fichiers)
     except EchecDefinitif as erreur:
         # Rien n'est perdu : les fichiers déjà insérés le restent, et ceux qui

@@ -39,6 +39,16 @@ services:
       - s3data:/data           # les fichiers survivent à un redémarrage
     command: /data
 
+  # --- Le petit modèle de langage (Niveau 3, option 3) ------------------------
+  slm:
+    image: ollama/ollama:0.40.13
+    container_name: pipeline_slm
+    ports:
+      - "11434:11434"          # l'API d'Ollama (utilisée par le code Python)
+    volumes:
+      - slmdata:/root/.ollama  # le modèle téléchargé est gardé : pas de 2e téléchargement
+
 volumes:
   pgdata:
   s3data:
+  slmdata:

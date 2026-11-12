@@ -42,16 +42,19 @@ jobs:
       S3_ACCESS_KEY: pipeline-access
       S3_SECRET_KEY: pipeline-secret-123
       S3_BUCKET: transactions
+      # Informations de connexion lues par slm.py
+      SLM_URL: http://localhost:11434
+      SLM_MODELE: qwen2.5:1.5b
 
     steps:
       - name: Récupérer le code du dépôt
         uses: actions/checkout@v5
 
       # Niveau 2 : le S3 est démarré AU DÉBUT, avec le même docker-compose.yml qu'en local
-      - name: "N2-1. Démarrer le service S3"
+      - name: "N2-1. Démarrer le service S3 (et le SLM du Niveau 3)"
         run: |
-          docker compose up -d s3
-          docker ps --filter name=pipeline_s3
+          docker compose up -d s3 slm
+          docker ps
 
       - name: Installer Python
         uses: actions/setup-python@v6
@@ -67,6 +70,10 @@ jobs:
 
       - name: Installer les dépendances
         run: pip install -r requirements.txt
+
+      # Niveau 3 (option 3) : téléchargement du modèle (~1 Go) dans le service Ollama
+      - name: "N3. Préparer le SLM (téléchargement du modèle)"
+        run: python preparer_slm.py
 
       - name: "1. Générer les fichiers CSV"
         run: |
@@ -112,7 +119,18 @@ jobs:
           python main.py
           psql -h localhost -U pipeline -d transactions \
             -c "SELECT datetime_transaction, iban_origine, iban_destinataire, montant, flag
-                FROM transactions WHERE datetime_transaction >= '2026-02-01'
+                FROM transactions WHERE datetime_transaction BETWEEN '2026-02-01' AND '2026-02-28'
+                ORDER BY datetime_transaction;"
+
+      # Niveau 3 (option 3) : du texte brut dans le S3 -> SLM -> même flux que les CSV
+      - name: "N3-SLM. Texte brut -> SLM -> validation -> base"
+        run: |
+          python generate_textes.py
+          python envoyer_s3.py data_textes
+          python main.py
+          psql -h localhost -U pipeline -d transactions \
+            -c "SELECT datetime_transaction, iban_origine, iban_destinataire, montant, flag
+                FROM transactions WHERE datetime_transaction >= '2026-09-01'
                 ORDER BY datetime_transaction;"
 
       # Si un seul test échoue, cette étape (et donc la pipeline) passe au ROUGE.
