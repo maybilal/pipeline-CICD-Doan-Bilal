@@ -1,4 +1,9 @@
 .venv/
 __pycache__/
+.pytest_cache/
 data/
-data_nouveaux/data_textes/
+data_retry/
+data_ko/
+data_nouveaux/
+data_images/
+data_textes/
